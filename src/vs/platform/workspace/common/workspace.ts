@@ -140,9 +140,18 @@ export class Workspace implements IWorkspace {
 	constructor(
 		public readonly id: string,
 		private _name: string,
-		private _roots: URI[]
+		private _roots: URI[],
+		private _legacy: boolean = true
 	) {
 		this.updateRootsMap();
+	}
+
+	public get legacy(): boolean {
+		return this._legacy;
+	}
+
+	public set legacy(legacy: boolean) {
+		this._legacy = legacy;
 	}
 
 	public get roots(): URI[] {
