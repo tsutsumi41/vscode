@@ -277,7 +277,7 @@ export class EmptyWorkspaceServiceImpl extends WorkspaceService {
 			.then(() => this.initialize(false)) // Reinitialize to ensure we are hitting the disk
 			.then(() => {
 				// Check and trigger
-				if (this._configuration.equals(current)) {
+				if (!this._configuration.equals(current)) {
 					this.triggerConfigurationChange();
 				}
 				return super.reloadConfiguration(section);
