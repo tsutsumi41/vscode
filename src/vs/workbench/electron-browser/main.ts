@@ -19,7 +19,7 @@ import uri from 'vs/base/common/uri';
 import strings = require('vs/base/common/strings');
 import { IResourceInput } from 'vs/platform/editor/common/editor';
 import { LegacyWorkspace, Workspace } from 'vs/platform/workspace/common/workspace';
-import { WorkspaceConfigurationService } from 'vs/workbench/services/configuration/node/configuration';
+import { WorkspaceService, EmptyWorkspaceServiceImpl, WorkspaceServiceImpl, WorkspaceData } from 'vs/workbench/services/configuration/node/configuration';
 import { realpath, stat } from 'vs/base/node/pfs';
 import { EnvironmentService } from 'vs/platform/environment/node/environmentService';
 import path = require('path');
@@ -96,58 +96,53 @@ function toInputs(paths: IPath[], isUntitledFile?: boolean): IResourceInput[] {
 }
 
 function openWorkbench(configuration: IWindowConfiguration, options: IOptions): TPromise<void> {
-	return resolveLegacyWorkspace(configuration).then(legacyWorkspace => {
-		const workspace = legacyWorkspaceToMultiRootWorkspace(legacyWorkspace);
-		const environmentService = new EnvironmentService(configuration, configuration.execPath);
-		const workspaceConfigurationService = new WorkspaceConfigurationService(environmentService, workspace);
+
+	const environmentService = new EnvironmentService(configuration, configuration.execPath);
+
+	// Since the configuration service is one of the core services that is used in so many places, we initialize it
+	// right before startup of the workbench shell to have its data ready for consumers
+	return createAndInitializeWorkspaceService(configuration, environmentService).then(workspaceService => {
+		const workspace = <Workspace>workspaceService.getWorkspace();
+		const legacyWorkspace = <LegacyWorkspace>workspaceService.getLegacyWorkspace();
 		const timerService = new TimerService((<any>window).MonacoEnvironment.timers as IInitData, !!workspace);
 		const storageService = createStorageService(legacyWorkspace, workspace, configuration, environmentService);
 
-		// Since the configuration service is one of the core services that is used in so many places, we initialize it
-		// right before startup of the workbench shell to have its data ready for consumers
-		return workspaceConfigurationService.initialize().then(() => {
-			timerService.beforeDOMContentLoaded = Date.now();
+		timerService.beforeDOMContentLoaded = Date.now();
 
-			return domContentLoaded().then(() => {
-				timerService.afterDOMContentLoaded = Date.now();
+		return domContentLoaded().then(() => {
+			timerService.afterDOMContentLoaded = Date.now();
 
-				// Open Shell
-				timerService.beforeWorkbenchOpen = Date.now();
-				const shell = new WorkbenchShell(document.body, {
-					contextService: workspaceConfigurationService,
-					configurationService: workspaceConfigurationService,
-					environmentService,
-					timerService,
-					storageService
-				}, configuration, options);
-				shell.open();
+			// Open Shell
+			timerService.beforeWorkbenchOpen = Date.now();
+			const shell = new WorkbenchShell(document.body, {
+				contextService: workspaceService,
+				configurationService: workspaceService,
+				environmentService,
+				timerService,
+				storageService
+			}, configuration, options);
+			shell.open();
 
-				// Inform user about loading issues from the loader
-				(<any>self).require.config({
-					onError: (err: any) => {
-						if (err.errorCode === 'load') {
-							shell.onUnexpectedError(loaderError(err));
-						}
+			// Inform user about loading issues from the loader
+			(<any>self).require.config({
+				onError: (err: any) => {
+					if (err.errorCode === 'load') {
+						shell.onUnexpectedError(loaderError(err));
 					}
-				});
+				}
 			});
 		});
 	});
 }
 
-function legacyWorkspaceToMultiRootWorkspace(legacyWorkspace: LegacyWorkspace): Workspace {
-	if (!legacyWorkspace) {
-		return null;
-	}
-
-	return new Workspace(
-		createHash('md5').update(legacyWorkspace.resource.fsPath).update(legacyWorkspace.ctime ? String(legacyWorkspace.ctime) : '').digest('hex'),
-		path.basename(legacyWorkspace.resource.fsPath),
-		[legacyWorkspace.resource]
-	);
+function createAndInitializeWorkspaceService(configuration: IWindowConfiguration, environmentService: EnvironmentService): TPromise<WorkspaceService> {
+	return resolveWorkspaceData(configuration).then(workspaceData => {
+		const workspaceService = workspaceData ? new WorkspaceServiceImpl(workspaceData, environmentService) : new EmptyWorkspaceServiceImpl(environmentService);
+		return workspaceService.initialize().then(() => workspaceService);
+	});
 }
 
-function resolveLegacyWorkspace(configuration: IWindowConfiguration): TPromise<LegacyWorkspace> {
+function resolveWorkspaceData(configuration: IWindowConfiguration): TPromise<WorkspaceData> {
 	if (!configuration.workspacePath) {
 		return TPromise.as(null);
 	}
@@ -166,10 +161,16 @@ function resolveLegacyWorkspace(configuration: IWindowConfiguration): TPromise<L
 		configuration.workspacePath = realWorkspacePath;
 
 		// resolve ctime of workspace
-		return stat(realWorkspacePath).then(folderStat => new LegacyWorkspace(
-			uri.file(realWorkspacePath),
-			platform.isLinux ? folderStat.ino : folderStat.birthtime.getTime() // On Linux, birthtime is ctime, so we cannot use it! We use the ino instead!
-		));
+		return stat(realWorkspacePath).then(folderStat => {
+			const folder = uri.file(realWorkspacePath);
+			const ctime = platform.isLinux ? folderStat.ino : folderStat.birthtime.getTime(); // On Linux, birthtime is ctime, so we cannot use it! We use the ino instead!
+			return {
+				id: createHash('md5').update(folder.fsPath).update(ctime ? String(ctime) : '').digest('hex'),
+				folders: [folder],
+				workspaceConfiguration: null,
+				ctime
+			};
+		});
 	}, error => {
 		errors.onUnexpectedError(error);
 

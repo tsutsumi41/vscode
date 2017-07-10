@@ -47,7 +47,7 @@ import { IStorageService, StorageScope } from 'vs/platform/storage/common/storag
 import { ContextMenuService } from 'vs/workbench/services/contextview/electron-browser/contextmenuService';
 import { WorkbenchKeybindingService } from 'vs/workbench/services/keybinding/electron-browser/keybindingService';
 import { IConfigurationService } from 'vs/platform/configuration/common/configuration';
-import { WorkspaceConfigurationService } from 'vs/workbench/services/configuration/node/configuration';
+import { WorkspaceService } from 'vs/workbench/services/configuration/node/configuration';
 import { IConfigurationEditingService } from 'vs/workbench/services/configuration/common/configurationEditing';
 import { ConfigurationEditingService } from 'vs/workbench/services/configuration/node/configurationEditingService';
 import { ContextKeyService } from 'vs/platform/contextkey/browser/contextKeyService';
@@ -218,7 +218,7 @@ export class Workbench implements IPartService {
 		@IStorageService private storageService: IStorageService,
 		@ILifecycleService private lifecycleService: ILifecycleService,
 		@IMessageService private messageService: IMessageService,
-		@IConfigurationService private configurationService: WorkspaceConfigurationService,
+		@IConfigurationService private configurationService: WorkspaceService,
 		@ITelemetryService private telemetryService: ITelemetryService,
 		@IEnvironmentService private environmentService: IEnvironmentService,
 		@IWindowService private windowService: IWindowService
