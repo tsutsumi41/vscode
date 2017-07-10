@@ -243,6 +243,10 @@ export class WorkspaceService extends Disposable implements IWorkspaceConfigurat
 		return [];
 	}
 
+	public isInWorkspaceContext(): boolean {
+		return false;
+	}
+
 	protected triggerConfigurationChange(): void {
 		this._onDidUpdateConfiguration.fire({ source: ConfigurationSource.Workspace, sourceConfig: void 0 });
 	}
@@ -312,17 +316,23 @@ export class WorkspaceServiceImpl extends EmptyWorkspaceServiceImpl {
 
 	private workspaceConfiguration: WorkspaceConfiguration;
 	private cachedFolderConfigs: StrictResourceMap<FolderConfiguration<any>>;
+	private inFolderContext: boolean;
 
 	constructor(workspaceData: WorkspaceData, environmentService: IEnvironmentService, private workspaceSettingsRootFolder: string = WORKSPACE_CONFIG_FOLDER_DEFAULT_NAME) {
 		super(environmentService);
-		this.workspace = new Workspace(workspaceData.id, '', workspaceData.folders ? workspaceData.folders : [], workspaceData.folders && workspaceData.folders.length === 1);
-		this.legacyWorkspace = this.workspace.legacy ? new LegacyWorkspace(this.workspace.roots[0], workspaceData.ctime) : null;
+		this.inFolderContext = workspaceData.folders && workspaceData.folders.length === 1;
+		this.workspace = new Workspace(workspaceData.id, '', workspaceData.folders ? workspaceData.folders : [], workspaceData.workspaceConfiguration);
+		this.legacyWorkspace = this.inFolderContext ? new LegacyWorkspace(this.workspace.roots[0], workspaceData.ctime) : null;
 		this.workspaceConfiguration = this._register(new WorkspaceConfiguration(workspaceData.workspaceConfiguration));
 		this._register(this.workspaceConfiguration.onDidUpdateConfiguration(() => this.onWorkspaceConfigurationChanged()));
 	}
 
 	public getUnsupportedWorkspaceKeys(): string[] {
-		return this.workspace.legacy ? this._configuration.getFolderConfigurationModel(this.workspace.roots[0]).workspaceSettingsConfig.unsupportedKeys : [];
+		return this.inFolderContext ? this._configuration.getFolderConfigurationModel(this.workspace.roots[0]).workspaceSettingsConfig.unsupportedKeys : [];
+	}
+
+	public isInWorkspaceContext(): boolean {
+		return !this.inFolderContext;
 	}
 
 	public initialize(trigger: boolean = true): TPromise<any> {
@@ -348,7 +358,7 @@ export class WorkspaceServiceImpl extends EmptyWorkspaceServiceImpl {
 
 	private initCachesForFolders(folders: URI[]): void {
 		for (const folder of folders) {
-			this.cachedFolderConfigs.set(folder, this._register(new FolderConfiguration(folder, this.workspaceSettingsRootFolder, this.workspace.legacy && folder.fsPath === this.workspace.roots[0].fsPath ? ConfigurationScope.WORKSPACE : ConfigurationScope.FOLDER)));
+			this.cachedFolderConfigs.set(folder, this._register(new FolderConfiguration(folder, this.workspaceSettingsRootFolder, this.inFolderContext && folder.fsPath === this.workspace.roots[0].fsPath ? ConfigurationScope.WORKSPACE : ConfigurationScope.FOLDER)));
 			this.updateFolderConfiguration(folder, new FolderConfigurationModel<any>(new FolderSettingsModel<any>(null), [], ConfigurationScope.FOLDER), false);
 		}
 	}
@@ -373,6 +383,8 @@ export class WorkspaceServiceImpl extends EmptyWorkspaceServiceImpl {
 		if (foldersChanged) {
 			this.workspace.roots = configuredFolders;
 			this.workspace.name = configuredFolders.map(root => basename(root.fsPath) || root.fsPath).join(', ');
+			this.inFolderContext = this.inFolderContext || this.workspace.roots.length > 1;
+			this.legacyWorkspace = this.inFolderContext ? this.legacyWorkspace : null;
 			this._onDidChangeWorkspaceRoots.fire();
 			this.onFoldersChanged();
 			return;
@@ -409,7 +421,7 @@ export class WorkspaceServiceImpl extends EmptyWorkspaceServiceImpl {
 
 	private updateFolderConfiguration(folder: URI, folderConfiguration: FolderConfigurationModel<any>, compare: boolean): boolean {
 		let configurationChanged = this._configuration.updateFolderConfiguration(folder, folderConfiguration, compare);
-		if (this.workspace.legacy && this.workspace.roots[0].fsPath === folder.fsPath) {
+		if (this.inFolderContext && this.workspace.roots[0].fsPath === folder.fsPath) {
 			// Workspace configuration changed
 			configurationChanged = this.updateWorkspaceConfiguration(compare) || configurationChanged;
 		}
@@ -417,7 +429,7 @@ export class WorkspaceServiceImpl extends EmptyWorkspaceServiceImpl {
 	}
 
 	private updateWorkspaceConfiguration(compare: boolean): boolean {
-		const workspaceConfiguration = this.workspace.legacy ? this._configuration.getFolderConfigurationModel(this.workspace.roots[0]) : this.workspaceConfiguration.workspaceConfigurationModel;
+		const workspaceConfiguration = this.inFolderContext ? this._configuration.getFolderConfigurationModel(this.workspace.roots[0]) : this.workspaceConfiguration.workspaceConfigurationModel;
 		return this._configuration.updateWorkspaceConfiguration(workspaceConfiguration, compare);
 	}
 

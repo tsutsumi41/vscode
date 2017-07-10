@@ -19,6 +19,10 @@ export interface IWorkspaceConfigurationService extends IConfigurationService {
 	 */
 	getUnsupportedWorkspaceKeys(): string[];
 
+	/**
+	 * Return `true` if the current configuration is in the context of workspace. Otherwise `false`.
+	 */
+	isInWorkspaceContext(): boolean;
 }
 
 export const WORKSPACE_STANDALONE_CONFIGURATIONS = {
